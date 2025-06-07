@@ -461,6 +461,16 @@
         // Make Firebase available globally
         window.firebaseDB = db;
         window.firebaseCollections = { collection, addDoc, getDocs, orderBy, query, limit };
+        window.firebaseReady = true;
+
+        // Initialize game after Firebase is ready
+        window.addEventListener('DOMContentLoaded', () => {
+            // Small delay to ensure everything is loaded
+            setTimeout(() => {
+                window.game = new Minesweeper();
+                window.game.startGame('easy');
+            }, 100);
+        });
     </script>
 
     <script>
@@ -912,6 +922,13 @@
             }
 
             async loadLeaderboard() {
+                // Wait for Firebase to be ready
+                if (!window.firebaseReady || !window.firebaseCollections) {
+                    console.log('Firebase not ready, showing placeholder...');
+                    this.displayLeaderboard([]);
+                    return;
+                }
+
                 try {
                     const { collection, getDocs, orderBy, query, limit } = window.firebaseCollections;
                     
@@ -967,32 +984,11 @@
             }
         }
 
-        const game = new Minesweeper();
-
-        // Start with Easy game by default
-        game.startGame('easy');
-
-        // Start continuous background override for revealed cells with light checkerboard
-        setInterval(() => {
-            const revealedCells = document.querySelectorAll('.cell.revealed');
-            revealedCells.forEach(cell => {
-                if (!cell.textContent.includes('💣')) { // Don't override mine backgrounds
-                    const r = parseInt(cell.dataset.row);
-                    const c = parseInt(cell.dataset.col);
-                    
-                    // Apply light checkerboard pattern to revealed cells
-                    if ((r + c) % 2 === 0) {
-                        cell.style.setProperty('background-color', '#e8d7c3', 'important'); // Light brown
-                    } else {
-                        cell.style.setProperty('background-color', '#d8caa9', 'important'); // Halfway between d4c4a8 and ddd0ba
-                    }
-                    cell.style.setProperty('background-image', 'none', 'important');
-                }
-            });
-        }, 50); // Faster refresh rate
-
+        // Helper functions - moved outside the module
         function startGame(difficulty) {
-            game.startGame(difficulty);
+            if (window.game) {
+                window.game.startGame(difficulty);
+            }
         }
 
         function toggleDropdown() {
@@ -1001,27 +997,36 @@
         }
 
         function selectDifficulty(difficulty) {
-            game.startGame(difficulty);
-            toggleDropdown(); // Close dropdown after selection
+            if (window.game) {
+                window.game.startGame(difficulty);
+                toggleDropdown();
+            }
+        }
+
+        function submitScore() {
+            if (window.game) {
+                window.game.submitScore();
+            }
         }
 
         // Close dropdown when clicking outside
         document.addEventListener('click', function(e) {
             const dropdown = document.getElementById('dropdown-options');
             const button = document.getElementById('difficulty-btn');
-            if (!button.contains(e.target) && !dropdown.contains(e.target)) {
+            if (dropdown && button && !button.contains(e.target) && !dropdown.contains(e.target)) {
                 dropdown.classList.remove('show');
             }
         });
 
-        function submitScore() {
-            game.submitScore();
-        }
-
         // Handle Enter key in name input
-        document.getElementById('player-name').addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                submitScore();
+        document.addEventListener('DOMContentLoaded', function() {
+            const playerNameInput = document.getElementById('player-name');
+            if (playerNameInput) {
+                playerNameInput.addEventListener('keypress', function(e) {
+                    if (e.key === 'Enter') {
+                        submitScore();
+                    }
+                });
             }
         });
     </script>
