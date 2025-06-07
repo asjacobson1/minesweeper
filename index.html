@@ -439,6 +439,30 @@
         </div>
     </div>
 
+    <!-- Firebase SDKs -->
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+        import { getFirestore, collection, addDoc, getDocs, orderBy, query, limit } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+
+        // 🔥 REPLACE THIS WITH YOUR FIREBASE CONFIG
+        const firebaseConfig = {
+            apiKey: "AIzaSyC80wTaYI2_LHrvhoNGm6L6JmfI_e-tD80",
+            authDomain: "minesweeper-leaderboard-45316.firebaseapp.com",
+            projectId: "minesweeper-leaderboard-45316",
+            storageBucket: "minesweeper-leaderboard-45316.firebasestorage.app",
+            messagingSenderId: "855390025011",
+            appId: "1:855390025011:web:f03aaa30dce83b64d27a46"
+        };
+
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        // Make Firebase available globally
+        window.firebaseDB = db;
+        window.firebaseCollections = { collection, addDoc, getDocs, orderBy, query, limit };
+    </script>
+
     <script>
         class Minesweeper {
             constructor() {
@@ -859,54 +883,85 @@
                 document.getElementById('player-name').focus();
             }
 
-            submitScore() {
+            async submitScore() {
                 const name = document.getElementById('player-name').value.trim() || 'Anonymous';
                 const score = {
                     name: name,
-                    time: this.timer,
+                    time: parseFloat(this.timer.toFixed(1)),
                     difficulty: this.difficulty,
-                    date: new Date().toLocaleDateString()
+                    date: new Date().toISOString(),
+                    timestamp: Date.now()
                 };
 
-                // Use in-memory storage instead of localStorage
-                if (!window.gameLeaderboard) {
-                    window.gameLeaderboard = [];
+                try {
+                    // Save to Firebase
+                    const { collection, addDoc } = window.firebaseCollections;
+                    await addDoc(collection(window.firebaseDB, 'leaderboard'), score);
+                    
+                    console.log('Score saved to Firebase!');
+                    
+                    // Close modal and refresh leaderboard
+                    document.getElementById('name-input').classList.remove('show');
+                    document.getElementById('player-name').value = '';
+                    await this.loadLeaderboard();
+                    
+                } catch (error) {
+                    console.error('Error saving score:', error);
+                    alert('Failed to save score. Please try again.');
                 }
-                
-                window.gameLeaderboard.push(score);
-                window.gameLeaderboard.sort((a, b) => {
-                    const difficultyOrder = { easy: 1, medium: 2, hard: 3 };
-                    if (difficultyOrder[a.difficulty] !== difficultyOrder[b.difficulty]) {
-                        return difficultyOrder[b.difficulty] - difficultyOrder[a.difficulty];
-                    }
-                    return a.time - b.time;
-                });
-
-                window.gameLeaderboard = window.gameLeaderboard.slice(0, 10); // Keep top 10
-
-                document.getElementById('name-input').classList.remove('show');
-                document.getElementById('player-name').value = '';
-                this.displayLeaderboard();
             }
 
-            loadLeaderboard() {
-                this.displayLeaderboard();
+            async loadLeaderboard() {
+                try {
+                    const { collection, getDocs, orderBy, query, limit } = window.firebaseCollections;
+                    
+                    // Get top 10 scores ordered by difficulty (hard first) then by time
+                    const leaderboardQuery = query(
+                        collection(window.firebaseDB, 'leaderboard'),
+                        orderBy('timestamp', 'desc'),
+                        limit(50) // Get more to sort properly
+                    );
+                    
+                    const querySnapshot = await getDocs(leaderboardQuery);
+                    const scores = [];
+                    
+                    querySnapshot.forEach((doc) => {
+                        scores.push(doc.data());
+                    });
+                    
+                    // Sort by difficulty (hard > medium > easy) then by time
+                    const difficultyOrder = { hard: 3, medium: 2, easy: 1 };
+                    scores.sort((a, b) => {
+                        if (difficultyOrder[a.difficulty] !== difficultyOrder[b.difficulty]) {
+                            return difficultyOrder[b.difficulty] - difficultyOrder[a.difficulty];
+                        }
+                        return a.time - b.time;
+                    });
+                    
+                    // Keep top 10
+                    const topScores = scores.slice(0, 10);
+                    
+                    this.displayLeaderboard(topScores);
+                    
+                } catch (error) {
+                    console.error('Error loading leaderboard:', error);
+                    this.displayLeaderboard([]); // Show empty leaderboard on error
+                }
             }
 
-            displayLeaderboard() {
-                const leaderboard = window.gameLeaderboard || [];
+            displayLeaderboard(scores = []) {
                 const container = document.getElementById('leaderboard-list');
                 
-                if (leaderboard.length === 0) {
-                    container.innerHTML = '<div class="leaderboard-entry"><span>No scores yet - be the first!</span></div>';
+                if (scores.length === 0) {
+                    container.innerHTML = '<div class="leaderboard-entry"><span>Loading scores... 🔄</span></div>';
                     return;
                 }
 
-                container.innerHTML = leaderboard.map((score, index) => `
+                container.innerHTML = scores.map((score, index) => `
                     <div class="leaderboard-entry">
                         <span class="rank">#${index + 1}</span>
                         <span class="player-name">${score.name}</span>
-                        <span class="score-time">${score.time.toFixed(1)}s - ${score.difficulty.charAt(0).toUpperCase() + score.difficulty.slice(1)}</span>
+                        <span class="score-time">${score.time}s - ${score.difficulty.charAt(0).toUpperCase() + score.difficulty.slice(1)}</span>
                     </div>
                 `).join('');
             }
